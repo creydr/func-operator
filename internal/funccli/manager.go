@@ -123,6 +123,13 @@ func (m *Manager) GetCurrentVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
+// EnsureReady ensures the func CLI is downloaded and ready to use.
+// This should be called before controllers start processing resources.
+func (m *Manager) EnsureReady(ctx context.Context) error {
+	m.logger.Info("Ensuring func CLI is ready")
+	return m.checkAndUpdate(ctx)
+}
+
 // checkAndUpdate checks for a new version and downloads it if available
 func (m *Manager) checkAndUpdate(ctx context.Context) error {
 	// Lock to ensure only one update happens at a time

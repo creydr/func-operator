@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -210,12 +211,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize and add func CLI manager
+	// Initialize func CLI manager
 	funcCLIManager, err := funccli.NewManager(ctrl.Log, funcCLIPath, funcCLICheckInterval)
 	if err != nil {
 		setupLog.Error(err, "unable to create func CLI manager")
 		os.Exit(1)
 	}
+
+	// Ensure func CLI is ready before controllers start
+	setupLog.Info("Downloading func CLI before starting controllers")
+	ctx := context.Background()
+	if err := funcCLIManager.EnsureReady(ctx); err != nil {
+		setupLog.Error(err, "failed to ensure func CLI is ready")
+		os.Exit(1)
+	}
+	setupLog.Info("Func CLI is ready")
 
 	if err := (&controller.FunctionReconciler{
 		Client:         mgr.GetClient(),
