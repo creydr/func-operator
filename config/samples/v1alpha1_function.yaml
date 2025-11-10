@@ -1,0 +1,9 @@
+apiVersion: functions.dev/v1alpha1
+kind: Function
+metadata:
+  labels:
+    app.kubernetes.io/name: func-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: function-sample
+spec:
+  # TODO(user): Add fields here
