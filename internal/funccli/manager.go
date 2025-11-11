@@ -113,14 +113,23 @@ func (m *Manager) GetCurrentVersion(ctx context.Context) (string, error) {
 	}
 
 	// Run "func version" command
-	cmd := exec.CommandContext(ctx, binaryPath, "version")
+	// We get the relating knative version, as this is also used in the release overview list from GitHub
+	cmd := exec.CommandContext(ctx, binaryPath, "version", "-v")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get version: %w", err)
 	}
 
-	version := strings.TrimSpace(string(output))
-	return version, nil
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "Knative:") {
+			parts := strings.Split(line, " ")
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1]), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to get version from func binary")
 }
 
 // EnsureReady ensures the func CLI is downloaded and ready to use.
