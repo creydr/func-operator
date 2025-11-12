@@ -36,7 +36,7 @@ type FunctionReconciler struct {
 	client.Client
 	Scheme         *runtime.Scheme
 	Recorder       record.EventRecorder
-	FuncCliManager *funccli.Manager
+	FuncCliManager funccli.Manager
 }
 
 // +kubebuilder:rbac:groups=functions.dev,resources=functions,verbs=get;list;watch;create;update;patch;delete

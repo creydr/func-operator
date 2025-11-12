@@ -19,10 +19,13 @@ package controller
 import (
 	"context"
 
+	"github.com/creydr/func-operator/internal/funccli"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/mock"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,7 +54,11 @@ var _ = Describe("Function Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: functionsdevv1alpha1.FunctionSpec{
+						Source: functionsdevv1alpha1.FunctionSpecSource{
+							RepositoryURL: "https://github.com/foo/bar",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -68,9 +75,14 @@ var _ = Describe("Function Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			funcCliManagerMock := funccli.NewMockManager(GinkgoT())
+			funcCliManagerMock.EXPECT().GetCurrentVersion(mock.Anything).Return("v1.0.0", nil)
+
 			controllerReconciler := &FunctionReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:         k8sClient,
+				Scheme:         k8sClient.Scheme(),
+				Recorder:       &record.FakeRecorder{},
+				FuncCliManager: funcCliManagerMock,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

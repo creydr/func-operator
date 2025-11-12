@@ -23,8 +23,15 @@ const (
 	binaryName           = "func"
 )
 
-// Manager handles periodic checks and downloads of the Knative func CLI binary
-type Manager struct {
+type Manager interface {
+	Start(ctx context.Context) error
+	GetBinaryPath() (string, error)
+	GetCurrentVersion(ctx context.Context) (string, error)
+	EnsureReady(ctx context.Context) error
+}
+
+// managerImpl handles periodic checks and downloads of the Knative func CLI binary
+type managerImpl struct {
 	logger        logr.Logger
 	checkInterval time.Duration
 	installPath   string
@@ -42,7 +49,7 @@ type GitHubRelease struct {
 }
 
 // NewManager creates a new func CLI manager
-func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration) (*Manager, error) {
+func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration) (Manager, error) {
 	if installPath == "" {
 		// Default to a temporary directory
 		installPath = filepath.Join(os.TempDir(), "func-operator", "bin")
@@ -57,7 +64,7 @@ func NewManager(logger logr.Logger, installPath string, checkInterval time.Durat
 		return nil, fmt.Errorf("failed to create install directory for func cli: %w", err)
 	}
 
-	return &Manager{
+	return &managerImpl{
 		logger:        logger.WithName("funccli-manager"),
 		checkInterval: checkInterval,
 		installPath:   installPath,
@@ -68,7 +75,7 @@ func NewManager(logger logr.Logger, installPath string, checkInterval time.Durat
 }
 
 // Start implements the manager.Runnable interface
-func (m *Manager) Start(ctx context.Context) error {
+func (m *managerImpl) Start(ctx context.Context) error {
 	m.logger.Info("Starting func CLI manager", "checkInterval", m.checkInterval, "installPath", m.installPath)
 
 	// Perform initial check immediately
@@ -94,7 +101,7 @@ func (m *Manager) Start(ctx context.Context) error {
 }
 
 // GetBinaryPath returns the path to the installed func binary
-func (m *Manager) GetBinaryPath() (string, error) {
+func (m *managerImpl) GetBinaryPath() (string, error) {
 	binaryPath := filepath.Join(m.installPath, binaryName)
 
 	// Check if binary exists
@@ -106,7 +113,7 @@ func (m *Manager) GetBinaryPath() (string, error) {
 }
 
 // GetCurrentVersion returns the currently installed version by running "func version"
-func (m *Manager) GetCurrentVersion(ctx context.Context) (string, error) {
+func (m *managerImpl) GetCurrentVersion(ctx context.Context) (string, error) {
 	binaryPath, err := m.GetBinaryPath()
 	if err != nil {
 		return "", fmt.Errorf("failed to get binary path: %w", err)
@@ -134,13 +141,13 @@ func (m *Manager) GetCurrentVersion(ctx context.Context) (string, error) {
 
 // EnsureReady ensures the func CLI is downloaded and ready to use.
 // This should be called before controllers start processing resources.
-func (m *Manager) EnsureReady(ctx context.Context) error {
+func (m *managerImpl) EnsureReady(ctx context.Context) error {
 	m.logger.Info("Ensuring func CLI is ready")
 	return m.checkAndUpdate(ctx)
 }
 
 // checkAndUpdate checks for a new version and downloads it if available
-func (m *Manager) checkAndUpdate(ctx context.Context) error {
+func (m *managerImpl) checkAndUpdate(ctx context.Context) error {
 	// Lock to ensure only one update happens at a time
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -173,7 +180,7 @@ func (m *Manager) checkAndUpdate(ctx context.Context) error {
 }
 
 // getLatestRelease fetches the latest release information from GitHub
-func (m *Manager) getLatestRelease(ctx context.Context) (*GitHubRelease, error) {
+func (m *managerImpl) getLatestRelease(ctx context.Context) (*GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", githubAPIURL, nil)
 	if err != nil {
 		return nil, err
@@ -201,7 +208,7 @@ func (m *Manager) getLatestRelease(ctx context.Context) (*GitHubRelease, error) 
 }
 
 // downloadAndInstall downloads the appropriate binary and installs it
-func (m *Manager) downloadAndInstall(ctx context.Context, release *GitHubRelease) error {
+func (m *managerImpl) downloadAndInstall(ctx context.Context, release *GitHubRelease) error {
 	// Determine the appropriate asset name based on OS and architecture
 	assetName := m.getAssetName()
 
@@ -242,7 +249,7 @@ func (m *Manager) downloadAndInstall(ctx context.Context, release *GitHubRelease
 }
 
 // downloadFile downloads a file from the given URL
-func (m *Manager) downloadFile(ctx context.Context, url, filepath string) error {
+func (m *managerImpl) downloadFile(ctx context.Context, url, filepath string) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
@@ -269,7 +276,7 @@ func (m *Manager) downloadFile(ctx context.Context, url, filepath string) error 
 }
 
 // getAssetName returns the appropriate asset name for the current platform
-func (m *Manager) getAssetName() string {
+func (m *managerImpl) getAssetName() string {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
