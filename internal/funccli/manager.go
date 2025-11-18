@@ -152,10 +152,10 @@ func (m *managerImpl) Run(ctx context.Context, dir string, args ...string) (stri
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run func %s: %w", strings.Join(cmd.Args, " "), err)
+		return string(output), fmt.Errorf("failed to run func %s: %w", strings.Join(cmd.Args, " "), err)
 	}
 
-	return string(output), err
+	return string(output), nil
 }
 
 // checkAndUpdate checks for a new version and downloads it if available
