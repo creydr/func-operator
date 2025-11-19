@@ -35,11 +35,12 @@ var _ Manager = &managerImpl{}
 
 // managerImpl handles periodic checks and downloads of the Knative func CLI binary
 type managerImpl struct {
-	logger        logr.Logger
-	checkInterval time.Duration
-	installPath   string
-	mu            sync.Mutex
-	httpClient    *http.Client
+	logger           logr.Logger
+	checkInterval    time.Duration
+	installPath      string
+	mu               sync.Mutex
+	httpClient       *http.Client
+	disableCLIUpdate bool
 }
 
 // GitHubRelease represents the GitHub API response for a release
@@ -52,7 +53,7 @@ type GitHubRelease struct {
 }
 
 // NewManager creates a new func CLI manager
-func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration) (Manager, error) {
+func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration, disableCLIUpdate bool) (Manager, error) {
 	if installPath == "" {
 		// Default to a temporary directory
 		installPath = filepath.Join(os.TempDir(), "func-operator", "bin")
@@ -67,6 +68,18 @@ func NewManager(logger logr.Logger, installPath string, checkInterval time.Durat
 		return nil, fmt.Errorf("failed to create install directory for func cli: %w", err)
 	}
 
+	if disableCLIUpdate {
+		// ensure binary exists already
+		cliPath := filepath.Join(installPath, binaryName)
+		file, err := os.Stat(cliPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to determine if binary exists already: %w", err)
+		}
+		if !file.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s binary is not a regular file", cliPath)
+		}
+	}
+
 	return &managerImpl{
 		logger:        logger.WithName("funccli-manager"),
 		checkInterval: checkInterval,
@@ -74,11 +87,17 @@ func NewManager(logger logr.Logger, installPath string, checkInterval time.Durat
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		disableCLIUpdate: disableCLIUpdate,
 	}, nil
 }
 
 // Start implements the manager.Runnable interface
 func (m *managerImpl) Start(ctx context.Context) error {
+	if m.disableCLIUpdate {
+		m.logger.Info("Skipping updating funccli manager as CLI updates are disabled")
+		return nil
+	}
+
 	m.logger.Info("Starting func CLI manager", "checkInterval", m.checkInterval, "installPath", m.installPath)
 
 	// Perform initial check immediately
@@ -160,6 +179,11 @@ func (m *managerImpl) Run(ctx context.Context, dir string, args ...string) (stri
 
 // checkAndUpdate checks for a new version and downloads it if available
 func (m *managerImpl) checkAndUpdate(ctx context.Context) error {
+	if m.disableCLIUpdate {
+		m.logger.Info("Skipping updating funccli manager as CLI updates are disabled")
+		return nil
+	}
+
 	// Lock to ensure only one update happens at a time
 	m.mu.Lock()
 	defer m.mu.Unlock()

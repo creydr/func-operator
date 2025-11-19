@@ -69,6 +69,7 @@ func main() {
 	var funcCLIPath string
 	var funcCLICheckInterval time.Duration
 	var tlsOpts []func(*tls.Config)
+	var disableFuncCLIUpdate bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -90,6 +91,7 @@ func main() {
 		"The directory where the func CLI binary will be installed")
 	flag.DurationVar(&funcCLICheckInterval, "func-cli-check-interval", 5*time.Minute,
 		"How often to check for new func CLI versions")
+	flag.BoolVar(&disableFuncCLIUpdate, "disable-func-cli-update", false, "Disable the function-cli update")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -212,7 +214,7 @@ func main() {
 	}
 
 	// Initialize func CLI manager
-	funcCLIManager, err := funccli.NewManager(ctrl.Log, funcCLIPath, funcCLICheckInterval)
+	funcCLIManager, err := funccli.NewManager(ctrl.Log, funcCLIPath, funcCLICheckInterval, disableFuncCLIUpdate)
 	if err != nil {
 		setupLog.Error(err, "unable to create func CLI manager")
 		os.Exit(1)
