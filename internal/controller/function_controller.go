@@ -19,9 +19,13 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/creydr/func-operator/internal/funccli"
+	"github.com/creydr/func-operator/internal/git"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,6 +66,70 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	logger.Info("Reconciling Function", "function", req.NamespacedName)
+
+	// clone src code
+	repo, err := git.NewRepository(ctx, function.Spec.Source.RepositoryURL, "main")
+	if err != nil {
+		logger.Error(err, "Failed to create setup git repository")
+		return ctrl.Result{}, fmt.Errorf("Failed to create setup git repository: %w", err)
+	}
+
+	logger.Info("Cloned function", "path", repo.Path())
+
+	// deploy function
+	deployArgs := []string{
+		"deploy",
+		"--remote",
+		"--namespace", function.Namespace,
+		"--registry", function.Spec.Registry.Path,
+		"--git-url", function.Spec.Source.RepositoryURL,
+	}
+
+	if function.Spec.Registry.Insecure {
+		deployArgs = append(deployArgs, "--registry-insecure")
+	}
+
+	if function.Spec.Registry.AuthSecretRef != nil && function.Spec.Registry.AuthSecretRef.Name != "" {
+		// we have an registry auth secret referenced -> use this for func deploy
+		authSecret := &v1.Secret{}
+		err := r.Get(ctx, types.NamespacedName{Name: function.Spec.Registry.AuthSecretRef.Name, Namespace: req.Namespace}, authSecret)
+		if err != nil {
+			logger.Error(err, "Failed to get registry auth secret", "secret", function.Spec.Registry.AuthSecretRef.Name, "namespace", req.Namespace)
+			return ctrl.Result{}, fmt.Errorf("failed to get registry auth secret: %w", err)
+		}
+
+		if authSecret.Type != v1.SecretTypeDockerConfigJson {
+			return ctrl.Result{}, fmt.Errorf("invalid registry auth secret type, must be of type %s", v1.SecretTypeDockerConfigJson)
+		}
+
+		if authSecret.Data[v1.DockerConfigJsonKey] == nil {
+			return ctrl.Result{}, fmt.Errorf("invalid registry auth secret data, must contain key %s", v1.DockerConfigJsonKey)
+		}
+
+		// persist secret temporarily
+		authFile, err := os.CreateTemp("", "auth-file-*.json")
+		if err != nil {
+			logger.Error(err, "Failed to create temp auth file")
+			return ctrl.Result{}, fmt.Errorf("failed to create temp auth file: %w", err)
+		}
+		defer os.Remove(authFile.Name())
+		defer authFile.Close()
+
+		_, err = authFile.Write(authSecret.Data[v1.DockerConfigJsonKey])
+		if err != nil {
+			logger.Error(err, "Failed to write temp auth file")
+			return ctrl.Result{}, fmt.Errorf("failed to write temp auth file: %w", err)
+		}
+
+		deployArgs = append(deployArgs, "--registry-authfile", authFile.Name())
+	}
+
+	out, err := r.FuncCliManager.Run(ctx, repo.Path(), deployArgs...)
+	if err != nil {
+		logger.Error(err, "Failed to deploy function", "output", out)
+		return ctrl.Result{}, fmt.Errorf("failed to deploy function: %w", err)
+	}
+	logger.Info("function deployed successfully", "output", out)
 
 	cliVersion, err := r.FuncCliManager.GetCurrentVersion(ctx)
 	if err != nil {

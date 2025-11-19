@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -34,13 +35,24 @@ type Function struct {
 
 // FunctionSpec defines the desired state of Function.
 type FunctionSpec struct {
-	Source FunctionSpecSource `json:"source,omitempty"`
+	Source   FunctionSpecSource   `json:"source,omitempty"`
+	Registry FunctionSpecRegistry `json:"registry,omitempty"`
 }
 
 type FunctionSpecSource struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	RepositoryURL string `json:"repositoryUrl"`
+}
+
+type FunctionSpecRegistry struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Path string `json:"path"`
+
+	Insecure bool `json:"insecure,omitempty"`
+
+	AuthSecretRef *v1.LocalObjectReference `json:"authSecretRef,omitempty"`
 }
 
 // FunctionStatus defines the observed state of Function.
