@@ -24,14 +24,18 @@ import (
 	"github.com/creydr/func-operator/internal/funccli"
 	"github.com/creydr/func-operator/internal/git"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/creydr/func-operator/api/v1alpha1"
+	"github.com/creydr/func-operator/api/v1alpha1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -46,9 +50,9 @@ type FunctionReconciler struct {
 // +kubebuilder:rbac:groups=functions.dev,resources=functions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=functions.dev,resources=functions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=functions.dev,resources=functions/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelines;pipelineruns,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile a Function
 func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -69,6 +73,51 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	logger.Info("Reconciling Function", "function", req.NamespacedName)
+
+	logger.Info("Create rolebinding for deploy-function role")
+	expectedRoleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "deploy-function-default",
+			Namespace: function.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: function.APIVersion,
+					Kind:       function.Kind,
+					Name:       function.Name,
+					UID:        function.UID,
+					Controller: pointer.BoolPtr(true),
+				},
+			},
+		},
+		Subjects: []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "default",
+			Namespace: function.Namespace,
+		}},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     "func-operator-deploy-function",
+			APIGroup: "rbac.authorization.k8s.io",
+		},
+	}
+	foundRoleBinding := &rbacv1.RoleBinding{}
+	err = r.Get(ctx, types.NamespacedName{Name: expectedRoleBinding.Name, Namespace: expectedRoleBinding.Namespace}, foundRoleBinding)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			err = r.Create(ctx, expectedRoleBinding)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to create role binding for deploy-function role: %w", err)
+			}
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to check if deploy-function role binding already exists: %w", err)
+	} else {
+		if !equality.Semantic.DeepDerivative(expectedRoleBinding, foundRoleBinding) {
+			err = r.Update(ctx, foundRoleBinding)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update deploy-function role binding: %w", err)
+			}
+		}
+	}
 
 	// clone src code
 	repo, err := git.NewRepository(ctx, function.Spec.Source.RepositoryURL, "main")

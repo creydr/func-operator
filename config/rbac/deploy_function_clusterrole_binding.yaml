@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: manager-deploy-function
+roleRef:
+  # we need to bind this to the controller/manager too, otherwise we cannot grant it from the controller
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: deploy-function
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: system

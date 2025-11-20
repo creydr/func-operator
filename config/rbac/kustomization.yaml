@@ -26,3 +26,6 @@ resources:
 - function_editor_role.yaml
 - function_viewer_role.yaml
 
+- deploy_function_clusterrole.yaml
+- deploy_function_clusterrole_binding.yaml
+
