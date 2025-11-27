@@ -29,7 +29,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /workspace
-RUN git clone --branch add-registry-authfile-build-option --single-branch --depth 1 https://github.com/creydr/knative-func .
+RUN git clone --branch main --single-branch --depth 1 https://github.com/knative/func .
 RUN make build
 
 # Use distroless as minimal base image to package the manager binary
