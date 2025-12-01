@@ -10,7 +10,7 @@ DELETE_CLUSTER_BEFORE=true
 CLUSTER_NAME=${CLUSTER_NAME:-kind}
 NODE_VERSION="v1.34.0"
 REGISTRY_NAME="kind-registry"
-REGISTRY_PORT="5001"
+REGISTRY_PORT=${REGISTRY_PORT:-"5001"}
 
 SERVING_VERSION="v1.19.0"
 TEKTON_VERSION="v1.6.0"
@@ -28,8 +28,17 @@ function delete_existing_cluster() {
 }
 
 function setup_local_registry() {
+  if [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" == "true" ]; then
+    reg_port="$(docker inspect -f '{{ (index (index .NetworkSettings.Ports "5000/tcp") 0).HostPort}}' "${REGISTRY_NAME}" 2>/dev/null)"
+    if [ "${reg_port}" != "${REGISTRY_PORT}" ]; then
+      header_text "existing registry is running on another port (${reg_port}). Cleaning it up..."
+      docker stop "${REGISTRY_NAME}"
+      docker rm "${REGISTRY_NAME}"
+    fi
+  fi
+
   if [ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)" != 'true' ]; then
-    header_text "create registry container"
+    header_text "create registry container for port ${REGISTRY_PORT}"
     docker run -d --restart=always -p "127.0.0.1:${REGISTRY_PORT}:5000" --name "${REGISTRY_NAME}" docker.io/registry:2
   fi
 }
