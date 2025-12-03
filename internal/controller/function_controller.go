@@ -124,7 +124,7 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	function.Status.DeployedImage = functionImage
 	function.Status.MiddlewareVersion = "TODO"
 
-	if err = r.Update(ctx, function); err != nil {
+	if err = r.Status().Update(ctx, function); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update function: %w", err)
 	}
 
