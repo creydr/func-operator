@@ -36,6 +36,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/creydr/func-operator/api/v1alpha1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -312,6 +313,7 @@ func (r *FunctionReconciler) deployedImage(ctx context.Context, name, namespace 
 func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.Function{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}). // only reconcile when the spec changed (e.g. not on status updates)
 		Named("function").
 		Complete(r)
 }
