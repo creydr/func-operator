@@ -97,7 +97,6 @@ rules:
   resources:
   - pipelineruns
   - pipelines
-  - taskruns
   verbs:
   - create
   - delete
@@ -105,4 +104,12 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - tekton.dev
+  resources:
+  - taskruns
+  verbs:
+  - get
+  - list
   - watch
