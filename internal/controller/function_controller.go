@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
+	funcfn "knative.dev/func/pkg/functions"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -102,12 +103,22 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if deployed {
 		// check middleware for updates and eventually redeploy
 
-		// TODO: middleware check
-		if err = r.deploy(ctx, function, repo); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to redeploy function: %w", err)
+		isOnLatestMiddleware, err := r.isMiddlewareLatest(ctx, metadata, function.Namespace)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to check if function is using latest middleware: %w", err)
+		}
+
+		if !isOnLatestMiddleware {
+			logger.Info("Function is not on latest middleware. Will redeploy", "function", req.NamespacedName)
+			if err = r.deploy(ctx, function, repo); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to redeploy function: %w", err)
+			}
+		} else {
+			logger.Info("Function is deployed with latest middleware. No need to redeploy", "function", req.NamespacedName)
 		}
 	} else {
 		// simply deploy
+		logger.Info("Function is not deployed already. Will deploy it", "function", req.NamespacedName)
 
 		if err = r.deploy(ctx, function, repo); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to deploy function: %w", err)
@@ -120,10 +131,15 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("failed to get deployed image of function: %w", err)
 	}
 
+	funcMiddlewareVersion, err := r.FuncCliManager.GetMiddlewareVersion(ctx, metadata.Name, function.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get function middleware version: %w", err)
+	}
+
 	function.Status.Name = metadata.Name
 	function.Status.Runtime = metadata.Runtime
 	function.Status.DeployedImage = functionImage
-	function.Status.MiddlewareVersion = "TODO"
+	function.Status.MiddlewareVersion = funcMiddlewareVersion
 
 	if err = r.Status().Update(ctx, function); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update function: %w", err)
@@ -316,4 +332,18 @@ func (r *FunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(predicate.GenerationChangedPredicate{}). // only reconcile when the spec changed (e.g. not on status updates)
 		Named("function").
 		Complete(r)
+}
+
+func (r *FunctionReconciler) isMiddlewareLatest(ctx context.Context, metadata funcfn.Function, namespace string) (bool, error) {
+	latestMiddleware, err := r.FuncCliManager.GetLatestMiddlewareVersion(ctx, metadata.Runtime, metadata.Invoke)
+	if err != nil {
+		return false, fmt.Errorf("failed to get latest available middleware version: %w", err)
+	}
+
+	functionMiddleware, err := r.FuncCliManager.GetMiddlewareVersion(ctx, metadata.Name, namespace)
+	if err != nil {
+		return false, fmt.Errorf("failed to get middleware version of function: %w", err)
+	}
+
+	return latestMiddleware == functionMiddleware, nil
 }

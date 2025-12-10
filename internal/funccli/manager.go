@@ -29,6 +29,8 @@ type Manager interface {
 	GetCurrentVersion(ctx context.Context) (string, error)
 	EnsureReady(ctx context.Context) error
 	Run(ctx context.Context, dir string, args ...string) (string, error)
+	GetLatestMiddlewareVersion(ctx context.Context, runtime string, invoke string) (string, error)
+	GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error)
 }
 
 var _ Manager = &managerImpl{}
@@ -175,6 +177,56 @@ func (m *managerImpl) Run(ctx context.Context, dir string, args ...string) (stri
 	}
 
 	return string(output), nil
+}
+
+func (m *managerImpl) GetLatestMiddlewareVersion(ctx context.Context, runtime string, invoke string) (string, error) {
+	versions := struct {
+		MiddlewareVersions map[string]map[string]string `json:"middlewareVersions,omitempty"`
+	}{}
+
+	if invoke == "" {
+		invoke = "http"
+	}
+
+	out, err := m.Run(ctx, "", "version", "-v", "-o", "json")
+	if err != nil {
+		return "", fmt.Errorf("failed to get latest middleware version: %w", err)
+	}
+
+	if err := json.Unmarshal([]byte(out), &versions); err != nil {
+		return "", fmt.Errorf("failed to unmarshal latest middleware version: %w", err)
+	}
+
+	runtimeVersions, ok := versions.MiddlewareVersions[runtime]
+	if !ok {
+		return "", fmt.Errorf("failed to find latest middleware version for runtime %s", runtime)
+	}
+
+	middlewareVersion, ok := runtimeVersions[invoke]
+	if !ok {
+		return "", fmt.Errorf("failed to find latest middleware version for runtime %s with %s invoke type", runtime, invoke)
+	}
+
+	return middlewareVersion, nil
+}
+
+func (m *managerImpl) GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error) {
+	middleware := struct {
+		Middleware struct {
+			Version string `json:"version,omitempty"`
+		} `json:"middleware,omitempty"`
+	}{}
+
+	out, err := m.Run(ctx, "", "describe", "-n", namespace, "-o", "json", name)
+	if err != nil {
+		return "", fmt.Errorf("failed to describe function: %w", err)
+	}
+
+	if err := json.Unmarshal([]byte(out), &middleware); err != nil {
+		return "", fmt.Errorf("failed to unmarshal func describe output: %w", err)
+	}
+
+	return middleware.Middleware.Version, nil
 }
 
 // checkAndUpdate checks for a new version and downloads it if available

@@ -201,6 +201,150 @@ func (_c *MockManager_GetCurrentVersion_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// GetLatestMiddlewareVersion provides a mock function for the type MockManager
+func (_mock *MockManager) GetLatestMiddlewareVersion(ctx context.Context, runtime string, invoke string) (string, error) {
+	ret := _mock.Called(ctx, runtime, invoke)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetLatestMiddlewareVersion")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (string, error)); ok {
+		return returnFunc(ctx, runtime, invoke)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) string); ok {
+		r0 = returnFunc(ctx, runtime, invoke)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, runtime, invoke)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManager_GetLatestMiddlewareVersion_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLatestMiddlewareVersion'
+type MockManager_GetLatestMiddlewareVersion_Call struct {
+	*mock.Call
+}
+
+// GetLatestMiddlewareVersion is a helper method to define mock.On call
+//   - ctx context.Context
+//   - runtime string
+//   - invoke string
+func (_e *MockManager_Expecter) GetLatestMiddlewareVersion(ctx interface{}, runtime interface{}, invoke interface{}) *MockManager_GetLatestMiddlewareVersion_Call {
+	return &MockManager_GetLatestMiddlewareVersion_Call{Call: _e.mock.On("GetLatestMiddlewareVersion", ctx, runtime, invoke)}
+}
+
+func (_c *MockManager_GetLatestMiddlewareVersion_Call) Run(run func(ctx context.Context, runtime string, invoke string)) *MockManager_GetLatestMiddlewareVersion_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetLatestMiddlewareVersion_Call) Return(s string, err error) *MockManager_GetLatestMiddlewareVersion_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockManager_GetLatestMiddlewareVersion_Call) RunAndReturn(run func(ctx context.Context, runtime string, invoke string) (string, error)) *MockManager_GetLatestMiddlewareVersion_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetMiddlewareVersion provides a mock function for the type MockManager
+func (_mock *MockManager) GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error) {
+	ret := _mock.Called(ctx, name, namespace)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetMiddlewareVersion")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (string, error)); ok {
+		return returnFunc(ctx, name, namespace)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) string); ok {
+		r0 = returnFunc(ctx, name, namespace)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, name, namespace)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManager_GetMiddlewareVersion_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetMiddlewareVersion'
+type MockManager_GetMiddlewareVersion_Call struct {
+	*mock.Call
+}
+
+// GetMiddlewareVersion is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name string
+//   - namespace string
+func (_e *MockManager_Expecter) GetMiddlewareVersion(ctx interface{}, name interface{}, namespace interface{}) *MockManager_GetMiddlewareVersion_Call {
+	return &MockManager_GetMiddlewareVersion_Call{Call: _e.mock.On("GetMiddlewareVersion", ctx, name, namespace)}
+}
+
+func (_c *MockManager_GetMiddlewareVersion_Call) Run(run func(ctx context.Context, name string, namespace string)) *MockManager_GetMiddlewareVersion_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetMiddlewareVersion_Call) Return(s string, err error) *MockManager_GetMiddlewareVersion_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockManager_GetMiddlewareVersion_Call) RunAndReturn(run func(ctx context.Context, name string, namespace string) (string, error)) *MockManager_GetMiddlewareVersion_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Run provides a mock function for the type MockManager
 func (_mock *MockManager) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	var tmpRet mock.Arguments
