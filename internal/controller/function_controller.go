@@ -258,6 +258,7 @@ func (r *FunctionReconciler) deploy(ctx context.Context, function *v1alpha1.Func
 		"--namespace", function.Namespace,
 		"--registry", function.Spec.Registry.Path,
 		"--git-url", function.Spec.Source.RepositoryURL,
+		"--builder", "s2i",
 	}
 
 	if function.Spec.Registry.Insecure {
