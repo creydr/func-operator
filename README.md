@@ -121,6 +121,33 @@ make docker-build IMG=<your-registry>/func-operator:latest
 make deploy IMG=<your-registry>/func-operator:latest
 ```
 
+### Debugging
+
+For debugging the operator with [Delve](https://github.com/go-delve/delve), use the debug targets:
+
+```bash
+# Build the debug image (includes Delve debugger and debug symbols)
+make docker-debugger-build IMG=<your-registry>/func-operator:debug
+
+# Push the debug image
+make docker-push IMG=<your-registry>/func-operator:debug
+
+# Deploy the operator in debug mode
+make deploy-debugger IMG=<your-registry>/func-operator:debug
+```
+
+The debug deployment runs the operator under Delve in headless mode, listening on port 40000. To connect your debugger:
+
+```bash
+# Port-forward to access the debugger
+kubectl port-forward -n func-operator-system deployment/func-operator-controller-manager 40000:40000
+
+# Connect with Delve CLI
+dlv connect localhost:40000
+```
+
+You can also connect using your IDE's remote debugging features (VS Code, GoLand, etc.) by configuring it to connect to `localhost:40000`.
+
 ### Run Tests
 
 ```bash
