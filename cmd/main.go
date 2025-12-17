@@ -42,6 +42,7 @@ import (
 	functionsdevv1alpha1 "github.com/creydr/func-operator/api/v1alpha1"
 	"github.com/creydr/func-operator/internal/controller"
 	"github.com/creydr/func-operator/internal/funccli"
+	webhookv1alpha1 "github.com/creydr/func-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -237,6 +238,13 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Function")
 		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1alpha1.SetupFunctionWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Function")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 
