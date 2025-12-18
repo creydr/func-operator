@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/creydr/func-operator/internal/funccli"
+	"github.com/creydr/func-operator/internal/git"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
@@ -79,13 +80,19 @@ var _ = Describe("Function Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-			funcCliManagerMock.EXPECT().GetCurrentVersion(mock.Anything).Return("v1.0.0", nil)
+			funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
+			funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
+			funcCliManagerMock.EXPECT().Run(mock.Anything, mock.Anything, mock.Anything).Return("", nil)
+
+			gitManagerMock := git.NewMockManager(GinkgoT())
+			gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
 
 			controllerReconciler := &FunctionReconciler{
 				Client:         k8sClient,
 				Scheme:         k8sClient.Scheme(),
 				Recorder:       &record.FakeRecorder{},
 				FuncCliManager: funcCliManagerMock,
+				GitManager:     gitManagerMock,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

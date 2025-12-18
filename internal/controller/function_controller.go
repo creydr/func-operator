@@ -51,6 +51,7 @@ type FunctionReconciler struct {
 	Scheme         *runtime.Scheme
 	Recorder       record.EventRecorder
 	FuncCliManager funccli.Manager
+	GitManager     git.Manager
 }
 
 // +kubebuilder:rbac:groups=functions.dev,resources=functions,verbs=get;list;watch;create;update;patch;delete
@@ -85,7 +86,7 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	logger.Info("Reconciling Function", "function", req.NamespacedName)
 
 	// get metadata from repo
-	repo, err := git.NewRepository(ctx, function.Spec.Source.RepositoryURL, "main")
+	repo, err := r.GitManager.CloneRepository(ctx, function.Spec.Source.RepositoryURL, "main")
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to setup git repository: %w", err)
 	}
