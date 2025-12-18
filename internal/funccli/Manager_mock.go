@@ -8,6 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
+	"knative.dev/func/pkg/functions"
 )
 
 // NewMockManager creates a new instance of MockManager. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -37,106 +38,143 @@ func (_m *MockManager) EXPECT() *MockManager_Expecter {
 	return &MockManager_Expecter{mock: &_m.Mock}
 }
 
-// EnsureReady provides a mock function for the type MockManager
-func (_mock *MockManager) EnsureReady(ctx context.Context) error {
-	ret := _mock.Called(ctx)
+// Deploy provides a mock function for the type MockManager
+func (_mock *MockManager) Deploy(ctx context.Context, repoPath string, namespace string, opts DeployOptions) error {
+	ret := _mock.Called(ctx, repoPath, namespace, opts)
 
 	if len(ret) == 0 {
-		panic("no return value specified for EnsureReady")
+		panic("no return value specified for Deploy")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, DeployOptions) error); ok {
+		r0 = returnFunc(ctx, repoPath, namespace, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
 	return r0
 }
 
-// MockManager_EnsureReady_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EnsureReady'
-type MockManager_EnsureReady_Call struct {
+// MockManager_Deploy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Deploy'
+type MockManager_Deploy_Call struct {
 	*mock.Call
 }
 
-// EnsureReady is a helper method to define mock.On call
+// Deploy is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockManager_Expecter) EnsureReady(ctx interface{}) *MockManager_EnsureReady_Call {
-	return &MockManager_EnsureReady_Call{Call: _e.mock.On("EnsureReady", ctx)}
+//   - repoPath string
+//   - namespace string
+//   - opts DeployOptions
+func (_e *MockManager_Expecter) Deploy(ctx interface{}, repoPath interface{}, namespace interface{}, opts interface{}) *MockManager_Deploy_Call {
+	return &MockManager_Deploy_Call{Call: _e.mock.On("Deploy", ctx, repoPath, namespace, opts)}
 }
 
-func (_c *MockManager_EnsureReady_Call) Run(run func(ctx context.Context)) *MockManager_EnsureReady_Call {
+func (_c *MockManager_Deploy_Call) Run(run func(ctx context.Context, repoPath string, namespace string, opts DeployOptions)) *MockManager_Deploy_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 DeployOptions
+		if args[3] != nil {
+			arg3 = args[3].(DeployOptions)
+		}
 		run(
 			arg0,
+			arg1,
+			arg2,
+			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *MockManager_EnsureReady_Call) Return(err error) *MockManager_EnsureReady_Call {
+func (_c *MockManager_Deploy_Call) Return(err error) *MockManager_Deploy_Call {
 	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *MockManager_EnsureReady_Call) RunAndReturn(run func(ctx context.Context) error) *MockManager_EnsureReady_Call {
+func (_c *MockManager_Deploy_Call) RunAndReturn(run func(ctx context.Context, repoPath string, namespace string, opts DeployOptions) error) *MockManager_Deploy_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// GetBinaryPath provides a mock function for the type MockManager
-func (_mock *MockManager) GetBinaryPath() (string, error) {
-	ret := _mock.Called()
+// Describe provides a mock function for the type MockManager
+func (_mock *MockManager) Describe(ctx context.Context, name string, namespace string) (functions.Instance, error) {
+	ret := _mock.Called(ctx, name, namespace)
 
 	if len(ret) == 0 {
-		panic("no return value specified for GetBinaryPath")
+		panic("no return value specified for Describe")
 	}
 
-	var r0 string
+	var r0 functions.Instance
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func() (string, error)); ok {
-		return returnFunc()
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (functions.Instance, error)); ok {
+		return returnFunc(ctx, name, namespace)
 	}
-	if returnFunc, ok := ret.Get(0).(func() string); ok {
-		r0 = returnFunc()
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) functions.Instance); ok {
+		r0 = returnFunc(ctx, name, namespace)
 	} else {
-		r0 = ret.Get(0).(string)
+		r0 = ret.Get(0).(functions.Instance)
 	}
-	if returnFunc, ok := ret.Get(1).(func() error); ok {
-		r1 = returnFunc()
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, name, namespace)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockManager_GetBinaryPath_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBinaryPath'
-type MockManager_GetBinaryPath_Call struct {
+// MockManager_Describe_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Describe'
+type MockManager_Describe_Call struct {
 	*mock.Call
 }
 
-// GetBinaryPath is a helper method to define mock.On call
-func (_e *MockManager_Expecter) GetBinaryPath() *MockManager_GetBinaryPath_Call {
-	return &MockManager_GetBinaryPath_Call{Call: _e.mock.On("GetBinaryPath")}
+// Describe is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name string
+//   - namespace string
+func (_e *MockManager_Expecter) Describe(ctx interface{}, name interface{}, namespace interface{}) *MockManager_Describe_Call {
+	return &MockManager_Describe_Call{Call: _e.mock.On("Describe", ctx, name, namespace)}
 }
 
-func (_c *MockManager_GetBinaryPath_Call) Run(run func()) *MockManager_GetBinaryPath_Call {
+func (_c *MockManager_Describe_Call) Run(run func(ctx context.Context, name string, namespace string)) *MockManager_Describe_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run()
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
 
-func (_c *MockManager_GetBinaryPath_Call) Return(s string, err error) *MockManager_GetBinaryPath_Call {
-	_c.Call.Return(s, err)
+func (_c *MockManager_Describe_Call) Return(instance functions.Instance, err error) *MockManager_Describe_Call {
+	_c.Call.Return(instance, err)
 	return _c
 }
 
-func (_c *MockManager_GetBinaryPath_Call) RunAndReturn(run func() (string, error)) *MockManager_GetBinaryPath_Call {
+func (_c *MockManager_Describe_Call) RunAndReturn(run func(ctx context.Context, name string, namespace string) (functions.Instance, error)) *MockManager_Describe_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -422,57 +460,6 @@ func (_c *MockManager_Run_Call) Return(s string, err error) *MockManager_Run_Cal
 }
 
 func (_c *MockManager_Run_Call) RunAndReturn(run func(ctx context.Context, dir string, args ...string) (string, error)) *MockManager_Run_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// Start provides a mock function for the type MockManager
-func (_mock *MockManager) Start(ctx context.Context) error {
-	ret := _mock.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Start")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = returnFunc(ctx)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockManager_Start_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Start'
-type MockManager_Start_Call struct {
-	*mock.Call
-}
-
-// Start is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockManager_Expecter) Start(ctx interface{}) *MockManager_Start_Call {
-	return &MockManager_Start_Call{Call: _e.mock.On("Start", ctx)}
-}
-
-func (_c *MockManager_Start_Call) Run(run func(ctx context.Context)) *MockManager_Start_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *MockManager_Start_Call) Return(err error) *MockManager_Start_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockManager_Start_Call) RunAndReturn(run func(ctx context.Context) error) *MockManager_Start_Call {
 	_c.Call.Return(run)
 	return _c
 }

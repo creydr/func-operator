@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -160,8 +159,8 @@ func (r *FunctionReconciler) setupPipelineRBAC(ctx context.Context, function *v1
 			Namespace: function.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: function.APIVersion,
-					Kind:       function.Kind,
+					APIVersion: v1alpha1.GroupVersion.String(),
+					Kind:       "Function",
 					Name:       function.Name,
 					UID:        function.UID,
 					Controller: ptr.To(true),
@@ -254,17 +253,11 @@ func (r *FunctionReconciler) deploy(ctx context.Context, function *v1alpha1.Func
 	}
 
 	// deploy function
-	deployArgs := []string{
-		"deploy",
-		"--remote",
-		"--namespace", function.Namespace,
-		"--registry", function.Spec.Registry.Path,
-		"--git-url", function.Spec.Source.RepositoryURL,
-		"--builder", "s2i",
-	}
-
-	if function.Spec.Registry.Insecure {
-		deployArgs = append(deployArgs, "--registry-insecure")
+	deployOptions := funccli.DeployOptions{
+		Registry:         function.Spec.Registry.Path,
+		InsecureRegistry: function.Spec.Registry.Insecure,
+		GitUrl:           function.Spec.Source.RepositoryURL,
+		Builder:          "s2i",
 	}
 
 	if function.Spec.Registry.AuthSecretRef != nil && function.Spec.Registry.AuthSecretRef.Name != "" {
@@ -276,25 +269,24 @@ func (r *FunctionReconciler) deploy(ctx context.Context, function *v1alpha1.Func
 
 		defer os.Remove(authFile)
 
-		deployArgs = append(deployArgs, "--registry-authfile", authFile)
+		deployOptions.RegistryAuthFile = authFile
 	}
 
-	logger.Info("Deploying function", "function", function.Name, "namespace", function.Namespace, "deployArgs", deployArgs)
-	out, err := r.FuncCliManager.Run(ctx, repo.Path(), deployArgs...)
+	logger.Info("Deploying function", "function", function.Name, "namespace", function.Namespace, "deployOptions", deployOptions)
+	err := r.FuncCliManager.Deploy(ctx, repo.Path(), function.Namespace, deployOptions)
 	if err != nil {
-		logger.Error(err, "Failed to deploy function", "output", out)
 		return fmt.Errorf("failed to deploy function: %w", err)
 	}
 
-	logger.Info("function deployed successfully", "output", out)
+	logger.Info("function deployed successfully")
 
 	return nil
 }
 
 func (r *FunctionReconciler) isDeployed(ctx context.Context, name, namespace string) (bool, error) {
-	out, err := r.FuncCliManager.Run(ctx, "", "--namespace", namespace, "describe", name)
+	_, err := r.FuncCliManager.Describe(ctx, name, namespace)
 	if err != nil {
-		if strings.Contains(out, "not found") || strings.Contains(out, "no describe function") {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no describe function") {
 			return false, nil
 		}
 
@@ -305,27 +297,12 @@ func (r *FunctionReconciler) isDeployed(ctx context.Context, name, namespace str
 }
 
 func (r *FunctionReconciler) deployedImage(ctx context.Context, name, namespace string) (string, error) {
-	out, err := r.FuncCliManager.Run(ctx, "", "--namespace", namespace, "describe", name, "--output", "json")
+	instance, err := r.FuncCliManager.Describe(ctx, name, namespace)
 	if err != nil {
 		return "", fmt.Errorf("failed to describe function: %w", err)
 	}
 
-	result := make(map[string]interface{})
-	if err = json.Unmarshal([]byte(out), &result); err != nil {
-		return "", fmt.Errorf("failed to unmarshal describe output: %w", err)
-	}
-
-	image, ok := result["image"]
-	if !ok {
-		return "", fmt.Errorf("failed to find image in describe output")
-	}
-
-	sImage, ok := image.(string)
-	if !ok {
-		return "", fmt.Errorf("failed to convert image from describe output to string")
-	}
-
-	return sImage, nil
+	return instance.Image, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

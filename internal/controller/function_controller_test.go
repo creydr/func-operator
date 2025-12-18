@@ -25,11 +25,11 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"knative.dev/func/pkg/functions"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	functionsdevv1alpha1 "github.com/creydr/func-operator/api/v1alpha1"
 )
@@ -69,7 +69,6 @@ var _ = Describe("Function Controller", func() {
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &functionsdevv1alpha1.Function{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -77,30 +76,75 @@ var _ = Describe("Function Controller", func() {
 			By("Cleanup the specific resource instance Function")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-			funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
-			funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
-			funcCliManagerMock.EXPECT().Run(mock.Anything, mock.Anything, mock.Anything).Return("", nil)
 
-			gitManagerMock := git.NewMockManager(GinkgoT())
-			gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+		Context("should successfully reconcile the resource", func() {
 
-			controllerReconciler := &FunctionReconciler{
-				Client:         k8sClient,
-				Scheme:         k8sClient.Scheme(),
-				Recorder:       &record.FakeRecorder{},
-				FuncCliManager: funcCliManagerMock,
-				GitManager:     gitManagerMock,
-			}
+			It("should deploy when middleware update required", func() {
+				By("Reconciling the created resource")
+				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
+				funcCliManagerMock.EXPECT().Describe(mock.Anything, "func-go", "default").Return(functions.Instance{
+					Name:      "",
+					Image:     "quay.io/foo/bar@sha256:foobar",
+					Namespace: "default",
+					Middleware: functions.Middleware{
+						Version: "v1.0.0",
+					},
+				}, nil)
+				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v2.0.0", nil)
+				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, "func-go", "default").Return("v1.0.0", nil)
+				funcCliManagerMock.EXPECT().Deploy(mock.Anything, mock.Anything, "default", funccli.DeployOptions{
+					Registry: "quay.io/foo/bar",
+					GitUrl:   "https://github.com/foo/bar",
+					Builder:  "s2i",
+				}).Return(nil)
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+				gitManagerMock := git.NewMockManager(GinkgoT())
+				gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+
+				controllerReconciler := &FunctionReconciler{
+					Client:         k8sClient,
+					Scheme:         k8sClient.Scheme(),
+					Recorder:       &record.FakeRecorder{},
+					FuncCliManager: funcCliManagerMock,
+					GitManager:     gitManagerMock,
+				}
+
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			It("should skip deploy when middleware already up to date", func() {
+				By("Reconciling the created resource")
+				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
+				funcCliManagerMock.EXPECT().Describe(mock.Anything, "func-go", "default").Return(functions.Instance{
+					Name:      "",
+					Image:     "quay.io/foo/bar@sha256:foobar",
+					Namespace: "default",
+					Middleware: functions.Middleware{
+						Version: "v1.0.0",
+					},
+				}, nil)
+				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
+				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, "func-go", "default").Return("v1.0.0", nil)
+
+				gitManagerMock := git.NewMockManager(GinkgoT())
+				gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+
+				controllerReconciler := &FunctionReconciler{
+					Client:         k8sClient,
+					Scheme:         k8sClient.Scheme(),
+					Recorder:       &record.FakeRecorder{},
+					FuncCliManager: funcCliManagerMock,
+					GitManager:     gitManagerMock,
+				}
+
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
 		})
 	})
 })

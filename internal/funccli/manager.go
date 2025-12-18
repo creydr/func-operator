@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	funcfn "knative.dev/func/pkg/functions"
 )
 
 const (
@@ -24,13 +25,24 @@ const (
 )
 
 type Manager interface {
-	Start(ctx context.Context) error
-	GetBinaryPath() (string, error)
-	GetCurrentVersion(ctx context.Context) (string, error)
-	EnsureReady(ctx context.Context) error
 	Run(ctx context.Context, dir string, args ...string) (string, error)
-	GetLatestMiddlewareVersion(ctx context.Context, runtime string, invoke string) (string, error)
-	GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error)
+
+	Describe(ctx context.Context, name, namespace string) (funcfn.Instance, error)
+	Deploy(ctx context.Context, repoPath string, namespace string, opts DeployOptions) error
+
+	GetCurrentVersion(ctx context.Context) (string, error)
+	GetLatestMiddlewareVersion(ctx context.Context, runtime, invoke string) (string, error)
+	GetMiddlewareVersion(ctx context.Context, name, namespace string) (string, error)
+}
+
+type DeployOptions struct {
+	Registry         string
+	InsecureRegistry bool
+	RegistryAuthFile string
+
+	GitUrl string
+
+	Builder string
 }
 
 var _ Manager = &managerImpl{}
@@ -55,7 +67,7 @@ type GitHubRelease struct {
 }
 
 // NewManager creates a new func CLI manager
-func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration, disableCLIUpdate bool) (Manager, error) {
+func NewManager(logger logr.Logger, installPath string, checkInterval time.Duration, disableCLIUpdate bool) (*managerImpl, error) {
 	if installPath == "" {
 		// Default to a temporary directory
 		installPath = filepath.Join(os.TempDir(), "func-operator", "bin")
@@ -179,6 +191,44 @@ func (m *managerImpl) Run(ctx context.Context, dir string, args ...string) (stri
 	return string(output), nil
 }
 
+func (m *managerImpl) Describe(ctx context.Context, name, namespace string) (funcfn.Instance, error) {
+	out, err := m.Run(ctx, "", "describe", "-n", namespace, "-o", "json", name)
+	if err != nil {
+		return funcfn.Instance{}, fmt.Errorf("failed to describe function: %q. %w", out, err)
+	}
+
+	instance := funcfn.Instance{}
+
+	if err := json.Unmarshal([]byte(out), &instance); err != nil {
+		return funcfn.Instance{}, fmt.Errorf("failed to unmarshal func describe output: %w", err)
+	}
+
+	return instance, nil
+}
+
+func (m *managerImpl) Deploy(ctx context.Context, repoPath string, namespace string, opts DeployOptions) error {
+	deployArgs := []string{
+		"deploy",
+		"--remote",
+		"--namespace", namespace,
+		"--registry", opts.Registry,
+		"--git-url", opts.GitUrl,
+		"--builder", opts.Builder,
+		"--registry-authfile", opts.RegistryAuthFile,
+	}
+
+	if opts.InsecureRegistry {
+		deployArgs = append(deployArgs, "--insecure-registry")
+	}
+
+	out, err := m.Run(ctx, repoPath, deployArgs...)
+	if err != nil {
+		return fmt.Errorf("failed to deploy function: %q. %w", out, err)
+	}
+
+	return nil
+}
+
 func (m *managerImpl) GetLatestMiddlewareVersion(ctx context.Context, runtime string, invoke string) (string, error) {
 	versions := struct {
 		MiddlewareVersions map[string]map[string]string `json:"middlewareVersions,omitempty"`
@@ -211,22 +261,12 @@ func (m *managerImpl) GetLatestMiddlewareVersion(ctx context.Context, runtime st
 }
 
 func (m *managerImpl) GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error) {
-	middleware := struct {
-		Middleware struct {
-			Version string `json:"version,omitempty"`
-		} `json:"middleware,omitempty"`
-	}{}
-
-	out, err := m.Run(ctx, "", "describe", "-n", namespace, "-o", "json", name)
+	instance, err := m.Describe(ctx, namespace, name)
 	if err != nil {
 		return "", fmt.Errorf("failed to describe function: %w", err)
 	}
 
-	if err := json.Unmarshal([]byte(out), &middleware); err != nil {
-		return "", fmt.Errorf("failed to unmarshal func describe output: %w", err)
-	}
-
-	return middleware.Middleware.Version, nil
+	return instance.Middleware.Version, nil
 }
 
 // checkAndUpdate checks for a new version and downloads it if available
