@@ -12,7 +12,6 @@ NODE_VERSION="v1.34.0"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT=${REGISTRY_PORT:-"5001"}
 
-CERT_MANAGER_VERSION="v1.19.2"
 SERVING_VERSION="v1.19.0"
 TEKTON_VERSION="v1.6.0"
 
@@ -110,14 +109,6 @@ function install_knative_serving() {
   kubectl wait deployment --all --timeout=-1s --for=condition=Available -n kourier-system
 }
 
-function install_certmanager() {
-  header_text "Installing Cert Manager"
-
-  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml
-  header_text "Waiting for Cert Manager to become ready"
-  kubectl wait deployment --all --timeout=-1s --for=condition=Available -n cert-manager
-}
-
 if [ "$DELETE_CLUSTER_BEFORE" = "true" ]; then
   delete_existing_cluster
 fi
@@ -125,7 +116,6 @@ fi
 setup_local_registry
 create_kind_cluster
 connect_registry_to_cluster
-install_certmanager
 install_tekton
 install_knative_serving
 
