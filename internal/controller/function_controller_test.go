@@ -37,12 +37,14 @@ import (
 var _ = Describe("Function Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
+		const resourceNamespace = "default"
+		const functionName = "func-go"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: resourceNamespace,
 		}
 		function := &functionsdevv1alpha1.Function{}
 
@@ -53,7 +55,7 @@ var _ = Describe("Function Controller", func() {
 				resource := &functionsdevv1alpha1.Function{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: resourceNamespace,
 					},
 					Spec: functionsdevv1alpha1.FunctionSpec{
 						Source: functionsdevv1alpha1.FunctionSpecSource{
@@ -78,21 +80,20 @@ var _ = Describe("Function Controller", func() {
 		})
 
 		Context("should successfully reconcile the resource", func() {
-
 			It("should deploy when middleware update required", func() {
 				By("Reconciling the created resource")
 				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-				funcCliManagerMock.EXPECT().Describe(mock.Anything, "func-go", "default").Return(functions.Instance{
+				funcCliManagerMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
 					Name:      "",
 					Image:     "quay.io/foo/bar@sha256:foobar",
-					Namespace: "default",
+					Namespace: resourceNamespace,
 					Middleware: functions.Middleware{
 						Version: "v1.0.0",
 					},
 				}, nil)
 				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v2.0.0", nil)
-				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, "func-go", "default").Return("v1.0.0", nil)
-				funcCliManagerMock.EXPECT().Deploy(mock.Anything, mock.Anything, "default", funccli.DeployOptions{
+				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
+				funcCliManagerMock.EXPECT().Deploy(mock.Anything, mock.Anything, resourceNamespace, funccli.DeployOptions{
 					Registry: "quay.io/foo/bar",
 					GitUrl:   "https://github.com/foo/bar",
 					Builder:  "s2i",
@@ -118,16 +119,16 @@ var _ = Describe("Function Controller", func() {
 			It("should skip deploy when middleware already up to date", func() {
 				By("Reconciling the created resource")
 				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-				funcCliManagerMock.EXPECT().Describe(mock.Anything, "func-go", "default").Return(functions.Instance{
+				funcCliManagerMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
 					Name:      "",
 					Image:     "quay.io/foo/bar@sha256:foobar",
-					Namespace: "default",
+					Namespace: resourceNamespace,
 					Middleware: functions.Middleware{
 						Version: "v1.0.0",
 					},
 				}, nil)
 				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
-				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, "func-go", "default").Return("v1.0.0", nil)
+				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
 
 				gitManagerMock := git.NewMockManager(GinkgoT())
 				gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
