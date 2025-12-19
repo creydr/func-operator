@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -46,29 +45,16 @@ var _ = Describe("Function Controller", func() {
 			Name:      resourceName,
 			Namespace: resourceNamespace,
 		}
-		function := &functionsdevv1alpha1.Function{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind Function")
-			err := k8sClient.Get(ctx, typeNamespacedName, function)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &functionsdevv1alpha1.Function{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: resourceNamespace,
-					},
-					Spec: functionsdevv1alpha1.FunctionSpec{
-						Source: functionsdevv1alpha1.FunctionSpecSource{
-							RepositoryURL: "https://github.com/foo/bar",
-						},
-						Registry: functionsdevv1alpha1.FunctionSpecRegistry{
-							Path: "quay.io/foo/bar",
-						},
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+		defaultSpec := functionsdevv1alpha1.FunctionSpec{
+			Source: functionsdevv1alpha1.FunctionSpecSource{
+				RepositoryURL: "https://github.com/foo/bar",
+				Reference:     "my-branch",
+			},
+			Registry: functionsdevv1alpha1.FunctionSpecRegistry{
+				Path: "quay.io/foo/bar",
+			},
+		}
 
 		AfterEach(func() {
 			resource := &functionsdevv1alpha1.Function{}
@@ -79,29 +65,23 @@ var _ = Describe("Function Controller", func() {
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 
-		Context("should successfully reconcile the resource", func() {
-			It("should deploy when middleware update required", func() {
-				By("Reconciling the created resource")
+		type reconcileTestCase struct {
+			spec           functionsdevv1alpha1.FunctionSpec
+			configureMocks func(*funccli.MockManager, *git.MockManager)
+		}
+
+		DescribeTable("should successfully reconcile the resource",
+			func(tc reconcileTestCase) {
+				By("creating the Function")
+				err := createFunctionResource(resourceName, resourceNamespace, tc.spec)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Setting up mocks")
 				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-				funcCliManagerMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
-					Name:      "",
-					Image:     "quay.io/foo/bar@sha256:foobar",
-					Namespace: resourceNamespace,
-					Middleware: functions.Middleware{
-						Version: "v1.0.0",
-					},
-				}, nil)
-				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v2.0.0", nil)
-				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
-				funcCliManagerMock.EXPECT().Deploy(mock.Anything, mock.Anything, resourceNamespace, funccli.DeployOptions{
-					Registry: "quay.io/foo/bar",
-					GitUrl:   "https://github.com/foo/bar",
-					Builder:  "s2i",
-				}).Return(nil)
-
 				gitManagerMock := git.NewMockManager(GinkgoT())
-				gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+				tc.configureMocks(funcCliManagerMock, gitManagerMock)
 
+				By("Reconciling the created resource")
 				controllerReconciler := &FunctionReconciler{
 					Client:         k8sClient,
 					Scheme:         k8sClient.Scheme(),
@@ -110,42 +90,77 @@ var _ = Describe("Function Controller", func() {
 					GitManager:     gitManagerMock,
 				}
 
-				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: typeNamespacedName,
 				})
 				Expect(err).NotTo(HaveOccurred())
-			})
+			},
+			Entry("should deploy when middleware update required", reconcileTestCase{
+				spec: defaultSpec,
+				configureMocks: func(funcMock *funccli.MockManager, gitMock *git.MockManager) {
+					funcMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
+						Middleware: functions.Middleware{
+							Version: "v1.0.0",
+						},
+					}, nil)
+					funcMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v2.0.0", nil)
+					funcMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
+					funcMock.EXPECT().Deploy(mock.Anything, mock.Anything, resourceNamespace, funccli.DeployOptions{
+						Registry: "quay.io/foo/bar",
+						GitUrl:   "https://github.com/foo/bar",
+						Builder:  "s2i",
+					}).Return(nil)
 
-			It("should skip deploy when middleware already up to date", func() {
-				By("Reconciling the created resource")
-				funcCliManagerMock := funccli.NewMockManager(GinkgoT())
-				funcCliManagerMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
-					Name:      "",
-					Image:     "quay.io/foo/bar@sha256:foobar",
-					Namespace: resourceNamespace,
-					Middleware: functions.Middleware{
-						Version: "v1.0.0",
+					gitMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "my-branch").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+				},
+			}),
+			Entry("should skip deploy when middleware already up to date", reconcileTestCase{
+				spec: defaultSpec,
+				configureMocks: func(funcMock *funccli.MockManager, gitMock *git.MockManager) {
+					funcMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
+						Middleware: functions.Middleware{
+							Version: "v1.0.0",
+						},
+					}, nil)
+					funcMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
+					funcMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
+
+					gitMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "my-branch").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+				},
+			}),
+			Entry("should use main as default branch", reconcileTestCase{
+				spec: functionsdevv1alpha1.FunctionSpec{
+					Source: functionsdevv1alpha1.FunctionSpecSource{
+						RepositoryURL: "https://github.com/foo/bar",
 					},
-				}, nil)
-				funcCliManagerMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
-				funcCliManagerMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
+					Registry: functionsdevv1alpha1.FunctionSpecRegistry{
+						Path: "quay.io/foo/bar",
+					},
+				},
+				configureMocks: func(funcMock *funccli.MockManager, gitMock *git.MockManager) {
+					funcMock.EXPECT().Describe(mock.Anything, functionName, resourceNamespace).Return(functions.Instance{
+						Middleware: functions.Middleware{
+							Version: "v1.0.0",
+						},
+					}, nil)
+					funcMock.EXPECT().GetLatestMiddlewareVersion(mock.Anything, mock.Anything, mock.Anything).Return("v1.0.0", nil)
+					funcMock.EXPECT().GetMiddlewareVersion(mock.Anything, functionName, resourceNamespace).Return("v1.0.0", nil)
 
-				gitManagerMock := git.NewMockManager(GinkgoT())
-				gitManagerMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
-
-				controllerReconciler := &FunctionReconciler{
-					Client:         k8sClient,
-					Scheme:         k8sClient.Scheme(),
-					Recorder:       &record.FakeRecorder{},
-					FuncCliManager: funcCliManagerMock,
-					GitManager:     gitManagerMock,
-				}
-
-				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-					NamespacedName: typeNamespacedName,
-				})
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
+					gitMock.EXPECT().CloneRepository(mock.Anything, "https://github.com/foo/bar", "main").Return(&git.Repository{CloneDir: "testdata/foo-bar"}, nil)
+				},
+			}),
+		)
 	})
 })
+
+func createFunctionResource(name, namespace string, spec functionsdevv1alpha1.FunctionSpec) error {
+	resource := functionsdevv1alpha1.Function{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: spec,
+	}
+
+	return k8sClient.Create(ctx, &resource)
+}
