@@ -261,7 +261,7 @@ func (m *managerImpl) GetLatestMiddlewareVersion(ctx context.Context, runtime st
 }
 
 func (m *managerImpl) GetMiddlewareVersion(ctx context.Context, name string, namespace string) (string, error) {
-	instance, err := m.Describe(ctx, namespace, name)
+	instance, err := m.Describe(ctx, name, namespace)
 	if err != nil {
 		return "", fmt.Errorf("failed to describe function: %w", err)
 	}
