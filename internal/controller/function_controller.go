@@ -89,33 +89,24 @@ type FunctionReconciler struct {
 // Reconcile a Function with status update
 func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("function", fmt.Sprintf("%s/%s", req.Namespace, req.Name))
-
-	// add logger with values to context back
 	ctx = log.IntoContext(ctx, logger)
 
 	original := &v1alpha1.Function{}
 	err := r.Get(ctx, req.NamespacedName, original)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			logger.Info("function resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
-		// Error reading the object - requeue the request.
 		logger.Error(err, "Failed to get function")
 		return ctrl.Result{}, err
 	}
 
 	function := original.DeepCopy()
-
-	// Create tracker and add to context
 	statusTracker := NewStatusTracker(r.Client, function)
 	ctx = WithStatusTracker(ctx, statusTracker)
 
 	reconcileErr := r.reconcile(ctx, function)
 
-	// Final flush at the end (handles ready condition calculation)
 	if err := statusTracker.Flush(ctx, function); err != nil {
 		logger.Error(err, "Unable to update Function status")
 		return ctrl.Result{}, err
@@ -196,9 +187,6 @@ func (r *FunctionReconciler) prepareSource(ctx context.Context, function *v1alph
 
 // ensureDeployment ensures the function is deployed and up-to-date
 func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function) error {
-	logger := log.FromContext(ctx)
-	logger.Info("Reconciling Function")
-
 	deployed, err := r.isDeployed(ctx, metadata.Name, function.Namespace)
 	if err != nil {
 		function.MarkDeployNotReady("DeployFailed", "Failed to check deployment status: %s", err.Error())
@@ -206,12 +194,11 @@ func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1a
 	}
 
 	if !deployed {
-		logger.Info("Function is not deployed")
+		log.FromContext(ctx).Info("Function is not deployed")
 		function.MarkDeployNotReady("NotDeployed", "Function not deployed yet")
 		return nil
 	}
 
-	// function is deployed -> update status with metadata information
 	deployer := metadata.Deploy.Deployer
 	if deployer == "" {
 		deployer = "knative"

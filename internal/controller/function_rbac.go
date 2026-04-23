@@ -98,8 +98,6 @@ func (r *FunctionReconciler) ensureDeployFunctionRole(ctx context.Context, names
 			return fmt.Errorf("failed to update role: %w", err)
 		}
 		logger.Info("Updated deploy-function role")
-	} else {
-		logger.Info("Deploy-function role already up to date")
 	}
 
 	return nil
@@ -158,8 +156,6 @@ func (r *FunctionReconciler) ensureDeployFunctionRoleBinding(ctx context.Context
 			return fmt.Errorf("failed to update role binding: %w", err)
 		}
 		logger.Info("Updated deploy-function role binding")
-	} else {
-		logger.Info("Deploy-function role binding already up to date")
 	}
 
 	return nil
