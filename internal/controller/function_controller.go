@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -52,16 +51,6 @@ const (
 	funcAnnotationPrefix       = "functions.knative.dev/"
 	funcAnnotationLastDeployed = funcAnnotationPrefix + "last-deployed"
 )
-
-// reconcileError carries a condition reason alongside the error so the
-// calling orchestrator can set the right status condition.
-type reconcileError struct {
-	reason string
-	err    error
-}
-
-func (e *reconcileError) Error() string { return e.err.Error() }
-func (e *reconcileError) Unwrap() error { return e.err }
 
 // FunctionReconciler reconciles a Function object
 type FunctionReconciler struct {
@@ -102,10 +91,12 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	function := original.DeepCopy()
+	state := &reconcileState{}
 	statusTracker := NewStatusTracker(r.Client, function)
 	ctx = WithStatusTracker(ctx, statusTracker)
 
-	reconcileErr := r.reconcile(ctx, function)
+	reconcileErr := r.reconcile(ctx, function, state)
+	syncStatus(function, state)
 
 	if err := statusTracker.Flush(ctx, function); err != nil {
 		logger.Error(err, "Unable to update Function status")
@@ -126,40 +117,27 @@ func (r *FunctionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *FunctionReconciler) reconcile(ctx context.Context, function *v1alpha1.Function) error {
+func (r *FunctionReconciler) reconcile(ctx context.Context, function *v1alpha1.Function, state *reconcileState) error {
 	function.InitializeConditions()
 
-	repo, metadata, err := r.prepareSource(ctx, function)
+	repo, metadata, err := r.prepareSource(ctx, function, state)
 	if err != nil {
-		var re *reconcileError
-		if errors.As(err, &re) {
-			function.MarkSourceNotReady(re.reason, "%s", re.Error())
-		}
 		return fmt.Errorf("prepare source failed: %w", err)
 	}
 	defer repo.Cleanup()
 
-	function.MarkSourceReady()
-	function.Status.Name = metadata.Name
-	function.Status.Git.ResolvedBranch = repo.Branch
-	function.Status.Git.ObservedCommit = repo.Commit
-	function.Status.Git.LastChecked = metav1.Now()
 	applyLastDeployedAnnotation(ctx, function)
 
-	if err := r.ensureDeployment(ctx, function, repo, metadata); err != nil {
+	if err := r.ensureDeployment(ctx, function, repo, metadata, state); err != nil {
 		return fmt.Errorf("deploying function failed: %w", err)
-	}
-
-	if err := FlushStatus(ctx, function); err != nil {
-		return fmt.Errorf("failed to update status: %w", err)
 	}
 
 	return nil
 }
 
-// prepareSource clones the git repository and retrieves function metadata.
-// It performs only work — all status/condition updates are handled by the caller.
-func (r *FunctionReconciler) prepareSource(ctx context.Context, function *v1alpha1.Function) (*git.Repository, *funcfn.Function, error) {
+func (r *FunctionReconciler) prepareSource(ctx context.Context, function *v1alpha1.Function, state *reconcileState) (*git.Repository, *funcfn.Function, error) {
+	state.source = &sourceState{}
+
 	branchReference := "main"
 	if function.Spec.Repository.Branch != "" {
 		branchReference = function.Spec.Repository.Branch
@@ -168,45 +146,57 @@ func (r *FunctionReconciler) prepareSource(ctx context.Context, function *v1alph
 	gitAuthSecret := v1.Secret{}
 	if function.Spec.Repository.AuthSecretRef != nil {
 		if err := r.Get(ctx, types.NamespacedName{Namespace: function.Namespace, Name: function.Spec.Repository.AuthSecretRef.Name}, &gitAuthSecret); err != nil {
-			return nil, nil, &reconcileError{reason: "AuthSecretNotFound", err: fmt.Errorf("auth secret not found: %w", err)}
+			state.source.failReason = "AuthSecretNotFound"
+			state.source.failMessage = fmt.Sprintf("auth secret not found: %s", err)
+			return nil, nil, fmt.Errorf("auth secret not found: %w", err)
 		}
 	}
 
 	repo, err := r.GitManager.CloneRepository(ctx, function.Spec.Repository.URL, function.Spec.Repository.Path, branchReference, gitAuthSecret.Data)
 	if err != nil {
-		return nil, nil, &reconcileError{reason: "GitCloneFailed", err: fmt.Errorf("failed to clone repository: %w", err)}
+		state.source.failReason = "GitCloneFailed"
+		state.source.failMessage = fmt.Sprintf("failed to clone repository: %s", err)
+		return nil, nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	metadata, err := fn.Metadata(repo.Path())
 	if err != nil {
-		return nil, nil, &reconcileError{reason: "MetadataReadFailed", err: fmt.Errorf("failed to read function metadata: %w", err)}
+		state.source.failReason = "MetadataReadFailed"
+		state.source.failMessage = fmt.Sprintf("failed to read function metadata: %s", err)
+		return nil, nil, fmt.Errorf("failed to read function metadata: %w", err)
 	}
+
+	state.source.name = metadata.Name
+	state.source.branch = repo.Branch
+	state.source.commit = repo.Commit
 
 	return repo, &metadata, nil
 }
 
-// ensureDeployment ensures the function is deployed and up-to-date
-func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function) error {
+func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState) error {
+	state.deployment = &deploymentState{}
+
 	deployed, err := r.isDeployed(ctx, metadata.Name, function.Namespace)
 	if err != nil {
-		function.MarkDeployNotReady("DeployFailed", "Failed to check deployment status: %s", err.Error())
+		state.deployment.failReason = "DeployFailed"
+		state.deployment.failMessage = fmt.Sprintf("Failed to check deployment status: %s", err)
 		return fmt.Errorf("failed to check if function is already deployed: %w", err)
 	}
 
 	if !deployed {
 		log.FromContext(ctx).Info("Function is not deployed")
-		function.MarkDeployNotReady("NotDeployed", "Function not deployed yet")
 		return nil
 	}
 
+	state.deployment.deployed = true
 	deployer := metadata.Deploy.Deployer
 	if deployer == "" {
 		deployer = "knative"
 	}
-	function.Status.Deployment.Deployer = deployer
-	function.Status.Deployment.Runtime = metadata.Runtime
+	state.deployment.deployer = deployer
+	state.deployment.runtime = metadata.Runtime
 
-	return r.handleMiddlewareUpdate(ctx, function, repo, metadata)
+	return r.handleMiddlewareUpdate(ctx, function, repo, metadata, state)
 }
 
 func (r *FunctionReconciler) removeFuncAnnotations(ctx context.Context, function *v1alpha1.Function) error {

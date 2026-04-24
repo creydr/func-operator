@@ -20,101 +20,95 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/functions-dev/func-operator/api/v1alpha1"
 	"github.com/functions-dev/func-operator/internal/git"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	funcfn "knative.dev/func/pkg/functions"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-type middlewareState struct {
-	updateEnabled  bool
-	updateSource   string
-	isLatest       bool
-	currentVersion string
-	latestVersion  string
-}
-
-// handleMiddlewareUpdate is the single owner of all middleware, service, and deploy-ready
-// conditions. Helper methods it calls (checkMiddlewareState, deploy) perform work but
-// never set conditions — that responsibility stays here.
-func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function) error {
+func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState) error {
 	logger := log.FromContext(ctx)
 
-	// Get current function state
 	describe, err := r.FuncCliManager.Describe(ctx, metadata.Name, function.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to describe function: %w", err)
 	}
-	function.Status.Deployment.Image = describe.Image
-	markServiceStatus(describe.Ready, function)
 
-	// Check middleware state
-	state, err := r.checkMiddlewareState(ctx, function, metadata)
+	mwState, err := r.checkMiddlewareState(ctx, function, metadata)
 	if err != nil {
-		function.MarkMiddlewareNotUpToDate("MiddlewareCheckFailed", "Failed to check middleware: %s", err)
+		state.middleware = &middlewareState{
+			failReason:  "MiddlewareCheckFailed",
+			failMessage: fmt.Sprintf("Failed to check middleware: %s", err),
+		}
 		return err
 	}
-	function.Status.Middleware.AutoUpdate.Enabled = state.updateEnabled
-	function.Status.Middleware.AutoUpdate.Source = state.updateSource
-	function.Status.Middleware.Current = describe.Middleware.Version
-	function.Status.Middleware.PendingRebuild = false
 
-	// Act based on middleware state
+	state.middleware = &mwState
+	state.deployment.image = describe.Image
+	state.deployment.ready = describe.Ready
+
 	switch {
-	case state.isLatest:
-		logger.Info("Function is on latest middleware", "version", state.currentVersion)
-		function.MarkMiddlewareUpToDate()
-		function.Status.Middleware.Available = nil
+	case mwState.isLatest:
+		logger.Info("Function is on latest middleware", "version", mwState.currentVersion)
 
-	case !state.updateEnabled:
-		logger.Info("Middleware update available but disabled", "source", state.updateSource)
-		function.Status.Middleware.Available = ptr.To(state.latestVersion)
-		function.MarkMiddlewareNotUpToDateIntentionally("SkipMiddlewareUpdate", "Skipping middleware update as update is disabled (source: %s)", state.updateSource)
+	case !mwState.updateEnabled:
+		logger.Info("Middleware update available but disabled", "source", mwState.updateSource)
 
 	default:
-		logger.Info("Redeploying for middleware update", "current", state.currentVersion, "latest", state.latestVersion)
-		function.Status.Middleware.Available = ptr.To(state.latestVersion)
-		function.MarkMiddlewareNotUpToDate("MiddlewareOutdated", "Middleware is outdated (%s available), redeploying...", state.latestVersion)
-		function.Status.Middleware.PendingRebuild = true
-
-		if err := FlushStatus(ctx, function); err != nil {
-			logger.Error(err, "Failed to update status before redeployment")
+		if err := r.redeployMiddleware(ctx, function, repo, state); err != nil {
+			return err
 		}
-
-		if err := r.deploy(ctx, function, repo); err != nil {
-			function.MarkDeployNotReady("DeployFailed", "Redeployment failed: %s", err.Error())
-			return fmt.Errorf("failed to redeploy function: %w", err)
-		}
-
-		function.Status.Middleware.PendingRebuild = false
-		function.Status.Middleware.LastRebuild = metav1.Now()
-		function.Status.Deployment.ImageBuilt = metav1.Now()
-		function.Status.Middleware.Available = nil
-		function.RecordHistoryEvent(fmt.Sprintf("Middleware updated from %q to %q", state.currentVersion, state.latestVersion))
-		function.MarkMiddlewareUpToDate()
 	}
 
-	// Refresh deployment status after potential redeploy
-	describe, err = r.FuncCliManager.Describe(ctx, metadata.Name, function.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to refresh function status: %w", err)
+	return r.refreshDeploymentState(ctx, metadata, function, state)
+}
+
+func (r *FunctionReconciler) redeployMiddleware(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, state *reconcileState) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Redeploying for middleware update", "current", state.middleware.currentVersion, "latest", state.middleware.latestVersion)
+
+	state.middleware.pendingRebuild = true
+	state.middleware.failReason = "MiddlewareOutdated"
+	state.middleware.failMessage = fmt.Sprintf("Middleware is outdated (%s available), redeploying...", state.middleware.latestVersion)
+
+	syncStatus(function, state)
+	if err := FlushStatus(ctx, function); err != nil {
+		logger.Error(err, "Failed to update status before redeployment")
 	}
-	function.Status.Deployment.Image = describe.Image
-	function.Status.Middleware.Current = describe.Middleware.Version
-	markServiceStatus(describe.Ready, function)
-	function.MarkDeployReady()
+
+	if err := r.deploy(ctx, function, repo); err != nil {
+		state.middleware.failReason = "DeployFailed"
+		state.middleware.failMessage = fmt.Sprintf("Redeployment failed: %s", err)
+		return fmt.Errorf("failed to redeploy function: %w", err)
+	}
+
+	now := metav1.Now()
+	state.middleware.pendingRebuild = false
+	state.middleware.redeployed = true
+	state.middleware.lastRebuild = now
+	state.middleware.failReason = ""
+	state.middleware.failMessage = ""
+	function.RecordHistoryEvent(fmt.Sprintf("Middleware updated from %q to %q", state.middleware.currentVersion, state.middleware.latestVersion))
 
 	return nil
 }
 
-// checkMiddlewareState gathers all middleware version information needed to decide
-// whether a redeploy is necessary. It performs only work — no conditions are set here.
+func (r *FunctionReconciler) refreshDeploymentState(ctx context.Context, metadata *funcfn.Function, function *v1alpha1.Function, state *reconcileState) error {
+	describe, err := r.FuncCliManager.Describe(ctx, metadata.Name, function.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to refresh function status: %w", err)
+	}
+
+	state.deployment.image = describe.Image
+	state.deployment.ready = describe.Ready
+	state.middleware.currentVersion = describe.Middleware.Version
+	return nil
+}
+
 func (r *FunctionReconciler) checkMiddlewareState(ctx context.Context, function *v1alpha1.Function, metadata *funcfn.Function) (middlewareState, error) {
 	updateEnabled, source, err := r.isMiddlewareUpdateEnabled(ctx, function)
 	if err != nil {
@@ -140,38 +134,19 @@ func (r *FunctionReconciler) checkMiddlewareState(ctx context.Context, function 
 	}, nil
 }
 
-func markServiceStatus(ready string, function *v1alpha1.Function) {
-	switch strings.ToLower(ready) {
-	case "true":
-		function.MarkServiceReady()
-	case "false":
-		function.MarkServiceNotReady("ServiceNotReady", "Underlying service is not ready")
-	default:
-		function.MarkServiceNotReady("ServiceReadyUnknown", "Underlying service readiness is unknown")
-	}
-}
-
-// isMiddlewareUpdateEnabled returns if the middleware should be updated given by the functions spec or the operators
-// default.
+// Precedence: function spec > operator configmap > hardcoded default (true).
 func (r *FunctionReconciler) isMiddlewareUpdateEnabled(ctx context.Context, function *v1alpha1.Function) (bool, string, error) {
-	logger := log.FromContext(ctx)
-
-	// setting from function overrides operator default
 	if function.Spec.AutoUpdateMiddleware != nil {
 		return *function.Spec.AutoUpdateMiddleware, "function", nil
 	}
 
-	// nothing defined in function spec --> check operator config
 	cm := &v1.ConfigMap{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: r.OperatorNamespace, Name: controllerConfigName}, cm)
-	if err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: r.OperatorNamespace, Name: controllerConfigName}, cm); err != nil {
 		return false, "", fmt.Errorf("failed to get operator config configmap: %w", err)
 	}
 
 	val, ok := cm.Data["autoUpdateMiddleware"]
 	if !ok {
-		logger.Info("No autoUpdateMiddleware field in configmap found. Fallback to hardcoded autoUpdateMiddleware=true")
-		// TODO: check if returning an error would be better here
 		return true, "operator", nil
 	}
 
