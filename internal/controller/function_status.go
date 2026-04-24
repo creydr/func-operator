@@ -57,6 +57,7 @@ type middlewareState struct {
 	pendingRebuild bool
 	redeployed     bool
 	lastRebuild    metav1.Time
+	historyMessage string
 	failReason     string
 	failMessage    string
 }
@@ -115,6 +116,9 @@ func syncStatus(function *v1alpha1.Function, state *reconcileState) {
 		function.Status.Deployment.ImageBuilt = state.middleware.lastRebuild
 		function.MarkMiddlewareUpToDate()
 		function.MarkDeployReady()
+		if state.middleware.historyMessage != "" {
+			function.RecordHistoryEvent(state.middleware.historyMessage)
+		}
 	}
 	function.Status.Middleware.AutoUpdate.Enabled = state.middleware.updateEnabled
 	function.Status.Middleware.AutoUpdate.Source = state.middleware.updateSource

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/functions-dev/func-operator/api/v1alpha1"
 	"github.com/functions-dev/func-operator/internal/funccli"
@@ -79,16 +78,4 @@ func (r *FunctionReconciler) writeRegistryAuthFile(ctx context.Context, function
 	}
 
 	return f.Name(), nil
-}
-
-func (r *FunctionReconciler) isDeployed(ctx context.Context, name, namespace string) (bool, error) {
-	_, err := r.FuncCliManager.Describe(ctx, name, namespace)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no describe function") {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to describe function: %w", err)
-	}
-
-	return true, nil
 }

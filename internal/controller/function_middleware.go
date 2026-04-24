@@ -30,13 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState) error {
+func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState, describe funcfn.Instance) error {
 	logger := log.FromContext(ctx)
-
-	describe, err := r.FuncCliManager.Describe(ctx, metadata.Name, function.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to describe function: %w", err)
-	}
 
 	mwState, err := r.checkMiddlewareState(ctx, function, metadata)
 	if err != nil {
@@ -48,8 +43,6 @@ func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, functio
 	}
 
 	state.middleware = &mwState
-	state.deployment.image = describe.Image
-	state.deployment.ready = describe.Ready
 
 	switch {
 	case mwState.isLatest:
@@ -92,7 +85,7 @@ func (r *FunctionReconciler) redeployMiddleware(ctx context.Context, function *v
 	state.middleware.lastRebuild = now
 	state.middleware.failReason = ""
 	state.middleware.failMessage = ""
-	function.RecordHistoryEvent(fmt.Sprintf("Middleware updated from %q to %q", state.middleware.currentVersion, state.middleware.latestVersion))
+	state.middleware.historyMessage = fmt.Sprintf("Middleware updated from %q to %q", state.middleware.currentVersion, state.middleware.latestVersion)
 
 	return nil
 }

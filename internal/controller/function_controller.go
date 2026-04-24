@@ -176,19 +176,21 @@ func (r *FunctionReconciler) prepareSource(ctx context.Context, function *v1alph
 func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState) error {
 	state.deployment = &deploymentState{}
 
-	deployed, err := r.isDeployed(ctx, metadata.Name, function.Namespace)
+	describe, err := r.FuncCliManager.Describe(ctx, metadata.Name, function.Namespace)
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no describe function") {
+			log.FromContext(ctx).Info("Function is not deployed")
+			return nil
+		}
 		state.deployment.failReason = "DeployFailed"
 		state.deployment.failMessage = fmt.Sprintf("Failed to check deployment status: %s", err)
-		return fmt.Errorf("failed to check if function is already deployed: %w", err)
-	}
-
-	if !deployed {
-		log.FromContext(ctx).Info("Function is not deployed")
-		return nil
+		return fmt.Errorf("failed to describe function: %w", err)
 	}
 
 	state.deployment.deployed = true
+	state.deployment.image = describe.Image
+	state.deployment.ready = describe.Ready
+
 	deployer := metadata.Deploy.Deployer
 	if deployer == "" {
 		deployer = "knative"
@@ -196,7 +198,7 @@ func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1a
 	state.deployment.deployer = deployer
 	state.deployment.runtime = metadata.Runtime
 
-	return r.handleMiddlewareUpdate(ctx, function, repo, metadata, state)
+	return r.handleMiddlewareUpdate(ctx, function, repo, metadata, state, describe)
 }
 
 func (r *FunctionReconciler) removeFuncAnnotations(ctx context.Context, function *v1alpha1.Function) error {
