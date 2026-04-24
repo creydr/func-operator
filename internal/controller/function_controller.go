@@ -126,7 +126,7 @@ func (r *FunctionReconciler) reconcile(ctx context.Context, function *v1alpha1.F
 	}
 	defer repo.Cleanup()
 
-	applyLastDeployedAnnotation(ctx, function)
+	applyLastDeployedAnnotation(ctx, function, state)
 
 	if err := r.ensureDeployment(ctx, function, repo, metadata, state); err != nil {
 		return fmt.Errorf("deploying function failed: %w", err)
@@ -198,7 +198,7 @@ func (r *FunctionReconciler) ensureDeployment(ctx context.Context, function *v1a
 	state.deployment.deployer = deployer
 	state.deployment.runtime = metadata.Runtime
 
-	return r.handleMiddlewareUpdate(ctx, function, repo, metadata, state, describe)
+	return r.handleMiddlewareUpdate(ctx, function, repo, metadata, state)
 }
 
 func (r *FunctionReconciler) removeFuncAnnotations(ctx context.Context, function *v1alpha1.Function) error {
@@ -224,7 +224,7 @@ func (r *FunctionReconciler) removeFuncAnnotations(ctx context.Context, function
 	})
 }
 
-func applyLastDeployedAnnotation(ctx context.Context, function *v1alpha1.Function) {
+func applyLastDeployedAnnotation(ctx context.Context, function *v1alpha1.Function, state *reconcileState) {
 	val, ok := function.Annotations[funcAnnotationLastDeployed]
 	if !ok {
 		return
@@ -234,7 +234,8 @@ func applyLastDeployedAnnotation(ctx context.Context, function *v1alpha1.Functio
 		log.FromContext(ctx).Info("could not parse "+funcAnnotationLastDeployed+" annotation", "error", err)
 		return
 	}
-	function.Status.Deployment.ImageBuilt = metav1.NewTime(t)
+	parsed := metav1.NewTime(t)
+	state.source.imageBuilt = &parsed
 }
 
 // SetupWithManager sets up the controller with the Manager.

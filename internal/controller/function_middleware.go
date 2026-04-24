@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState, describe funcfn.Instance) error {
+func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, metadata *funcfn.Function, state *reconcileState) error {
 	logger := log.FromContext(ctx)
 
 	mwState, err := r.checkMiddlewareState(ctx, function, metadata)
@@ -55,9 +55,10 @@ func (r *FunctionReconciler) handleMiddlewareUpdate(ctx context.Context, functio
 		if err := r.redeployMiddleware(ctx, function, repo, state); err != nil {
 			return err
 		}
+		return r.refreshDeploymentState(ctx, metadata, function, state)
 	}
 
-	return r.refreshDeploymentState(ctx, metadata, function, state)
+	return nil
 }
 
 func (r *FunctionReconciler) redeployMiddleware(ctx context.Context, function *v1alpha1.Function, repo *git.Repository, state *reconcileState) error {

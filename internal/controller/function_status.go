@@ -34,6 +34,7 @@ type sourceState struct {
 	name        string
 	branch      string
 	commit      string
+	imageBuilt  *metav1.Time
 	failReason  string
 	failMessage string
 }
@@ -76,6 +77,9 @@ func syncStatus(function *v1alpha1.Function, state *reconcileState) {
 	function.Status.Git.ResolvedBranch = state.source.branch
 	function.Status.Git.ObservedCommit = state.source.commit
 	function.Status.Git.LastChecked = metav1.Now()
+	if state.source.imageBuilt != nil {
+		function.Status.Deployment.ImageBuilt = *state.source.imageBuilt
+	}
 
 	// --- Deployment ---
 	if state.deployment == nil {
