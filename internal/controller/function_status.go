@@ -103,6 +103,11 @@ func syncStatus(function *v1alpha1.Function, state *reconcileState) {
 	if state.middleware == nil {
 		return
 	}
+	function.Status.Middleware.AutoUpdate.Enabled = state.middleware.updateEnabled
+	function.Status.Middleware.AutoUpdate.Source = state.middleware.updateSource
+	function.Status.Middleware.Current = state.middleware.currentVersion
+	function.Status.Middleware.PendingRebuild = state.middleware.pendingRebuild
+
 	if state.middleware.failReason != "" {
 		function.MarkMiddlewareNotUpToDate(state.middleware.failReason, "%s", state.middleware.failMessage)
 		return
@@ -124,10 +129,6 @@ func syncStatus(function *v1alpha1.Function, state *reconcileState) {
 			function.RecordHistoryEvent(state.middleware.historyMessage)
 		}
 	}
-	function.Status.Middleware.AutoUpdate.Enabled = state.middleware.updateEnabled
-	function.Status.Middleware.AutoUpdate.Source = state.middleware.updateSource
-	function.Status.Middleware.Current = state.middleware.currentVersion
-	function.Status.Middleware.PendingRebuild = state.middleware.pendingRebuild
 }
 
 func markServiceStatus(ready string, function *v1alpha1.Function) {

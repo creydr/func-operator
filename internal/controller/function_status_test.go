@@ -214,6 +214,32 @@ var _ = Describe("syncStatus", func() {
 			Expect(cond.Reason).To(Equal("MiddlewareCheckFailed"))
 		})
 
+		It("should set pendingRebuild even when failReason is set (mid-deploy flush)", func() {
+			state := &reconcileState{
+				source:     baseSource,
+				deployment: baseDeployment,
+				middleware: &middlewareState{
+					pendingRebuild: true,
+					currentVersion: "v1.0.0",
+					latestVersion:  "v2.0.0",
+					updateEnabled:  true,
+					updateSource:   "operator",
+					failReason:     "MiddlewareOutdated",
+					failMessage:    "Middleware is outdated (v2.0.0 available), redeploying...",
+				},
+			}
+			syncStatus(function, state)
+
+			Expect(function.Status.Middleware.PendingRebuild).To(BeTrue())
+			Expect(function.Status.Middleware.Current).To(Equal("v1.0.0"))
+			Expect(function.Status.Middleware.AutoUpdate.Enabled).To(BeTrue())
+
+			cond := meta.FindStatusCondition(function.Status.Conditions, v1alpha1.TypeMiddlewareUpToDate)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("MiddlewareOutdated"))
+		})
+
 		It("should mark middleware up to date when latest", func() {
 			state := &reconcileState{
 				source:     baseSource,
